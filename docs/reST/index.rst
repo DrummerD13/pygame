@@ -1,213 +1,374 @@
-Pygame Front Page
-=================
+import time
+import pygame
+from OpenGL.GL import *
+from OpenGL.GL.shaders import compileProgram, compileShader
 
-.. toctree::
-   :maxdepth: 2
-   :glob:
-   :hidden:
 
-   ref/*
-   tut/*
-   tut/en/**/*
-   tut/ko/**/*
-   c_api
-   filepaths
-   logos
+VERTEX_SHADER = """
+#version 120
 
-Quick start
------------
+attribute vec2 aPosition;
 
-Welcome to pygame! Once you've got pygame installed (:code:`pip install pygame` or
-:code:`pip3 install pygame` for most people), the next question is how to get a game
-loop running. Pygame, unlike some other libraries, gives you full control of program
-execution. That freedom means it is easy to mess up in your initial steps.
+void main() {
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+"""
 
-Here is a good example of a basic setup (opens the window, updates the screen, and handles events)--
 
-.. literalinclude:: ref/code_examples/base_script.py
+FRAGMENT_SHADER = """
+#version 120
 
-Here is a slightly more fleshed out example, which shows you how to move something
-(a circle in this case) around on screen--
+uniform vec2 iResolution;
+uniform float iTime;
+uniform float uHue;
+uniform float uXOffset;
+uniform float uSpeed;
+uniform float uIntensity;
+uniform float uSize;
 
-.. literalinclude:: ref/code_examples/base_script_example.py
+#define OCTAVE_COUNT 10
 
-For more in depth reference, check out the :ref:`tutorials-reference-label`
-section below, check out a video tutorial (`I'm a fan of this one
-<https://www.youtube.com/watch?v=AY9MnQ4x3zk>`_), or reference the API
-documentation by module.
 
-Documents
----------
+vec3 hsv2rgb(vec3 c) {
+    vec3 rgb = clamp(
+        abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0)
+        - 1.0,
+        0.0,
+        1.0
+    );
 
-`Readme`_
-  Basic information about pygame: what it is, who is involved, and where to find it.
+    return c.z * mix(vec3(1.0), rgb, c.y);
+}
 
-`Install`_
-  Steps needed to compile pygame on several platforms.
-  Also help on finding and installing prebuilt binaries for your system.
 
-:doc:`filepaths`
-  How pygame handles file system paths.
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
 
-:doc:`Pygame Logos <logos>`
-   The logos of Pygame in different resolutions.
 
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 
-`LGPL License`_
-  This is the license pygame is distributed under.
-  It provides for pygame to be distributed with open source and commercial software.
-  Generally, if pygame is not changed, it can be used with any type of program.
 
-.. _tutorials-reference-label:
+mat2 rotate2d(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
 
-Tutorials
----------
+    return mat2(
+        c, -s,
+        s,  c
+    );
+}
 
-:doc:`Introduction to Pygame <tut/PygameIntro>`
-  An introduction to the basics of pygame.
-  This is written for users of Python and appeared in volume two of the Py magazine.
 
-:doc:`Import and Initialize <tut/ImportInit>`
-  The beginning steps on importing and initializing pygame.
-  The pygame package is made of several modules.
-  Some modules are not included on all platforms.
+float noise(vec2 p) {
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
 
-:doc:`How do I move an Image? <tut/MoveIt>`
-  A basic tutorial that covers the concepts behind 2D computer animation.
-  Information about drawing and clearing objects to make them appear animated.
+    float a = hash12(ip);
+    float b = hash12(ip + vec2(1.0, 0.0));
+    float c = hash12(ip + vec2(0.0, 1.0));
+    float d = hash12(ip + vec2(1.0, 1.0));
 
-:doc:`Chimp Tutorial, Line by Line <tut/ChimpLineByLine>`
-  The pygame examples include a simple program with an interactive fist and a chimpanzee.
-  This was inspired by the annoying flash banner of the early 2000s.
-  This tutorial examines every line of code used in the example.
+    vec2 t = smoothstep(0.0, 1.0, fp);
 
-:doc:`Sprite Module Introduction <tut/SpriteIntro>`
-  Pygame includes a higher level sprite module to help organize games.
-  The sprite module includes several classes that help manage details found in almost all games types.
-  The Sprite classes are a bit more advanced than the regular pygame modules,
-  and need more understanding to be properly used.
+    return mix(
+        mix(a, b, t.x),
+        mix(c, d, t.x),
+        t.y
+    );
+}
 
-:doc:`Surfarray Introduction <tut/SurfarrayIntro>`
-  Pygame used the NumPy python module to allow efficient per pixel effects on images.
-  Using the surface arrays is an advanced feature that allows custom effects and filters.
-  This also examines some of the simple effects from the pygame example, arraydemo.py.
 
-:doc:`Camera Module Introduction <tut/CameraIntro>`
-  Pygame, as of 1.9, has a camera module that allows you to capture images,
-  watch live streams, and do some basic computer vision.
-  This tutorial covers those use cases.
+float fbm(vec2 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
 
-:doc:`Newbie Guide <tut/newbieguide>`
-  A list of thirteen helpful tips for people to get comfortable using pygame.
+    for (int i = 0; i < OCTAVE_COUNT; ++i) {
+        value += amplitude * noise(p);
 
-:doc:`Making Games Tutorial <tut/MakeGames>`
-  A large tutorial that covers the bigger topics needed to create an entire game.
+        p *= rotate2d(0.45);
+        p *= 2.0;
 
-:doc:`Display Modes <tut/DisplayModes>`
-  Getting a display surface for the screen.
+        amplitude *= 0.5;
+    }
 
-:doc:`한국어 튜토리얼 (Korean Tutorial) <tut/ko/빨간블록 검은블록/개요>`
-  빨간블록 검은블록
+    return value;
+}
 
 
-Reference
----------
+void main() {
+    vec2 fragCoord = gl_FragCoord.xy;
 
-:ref:`genindex`
-  A list of all functions, classes, and methods in the pygame package.
+    vec2 uv = fragCoord / iResolution.xy;
 
-:doc:`ref/bufferproxy`
-  An array protocol view of surface pixels
+    uv = 2.0 * uv - 1.0;
 
-:doc:`ref/color`
-  Color representation.
+    uv.x *= iResolution.x / iResolution.y;
 
-:doc:`ref/cursors`
-  Loading and compiling cursor images.
+    uv.x += uXOffset;
 
-:doc:`ref/display`
-  Configure the display surface.
+    uv += 2.0 * fbm(
+        uv * uSize + 0.8 * iTime * uSpeed
+    ) - 1.0;
 
-:doc:`ref/draw`
-  Drawing simple shapes like lines and ellipses to surfaces.
+    float dist = abs(uv.x);
 
-:doc:`ref/event`
-  Manage the incoming events from various input devices and the windowing platform.
+    vec3 baseColor = hsv2rgb(
+        vec3(
+            uHue / 360.0,
+            0.7,
+            0.8
+        )
+    );
 
-:doc:`ref/examples`
-  Various programs demonstrating the use of individual pygame modules.
+    vec3 col = baseColor *
+        pow(
+            mix(
+                0.0,
+                0.07,
+                hash11(iTime * uSpeed)
+            ) / dist,
+            1.0
+        ) *
+        uIntensity;
 
-:doc:`ref/font`
-  Loading and rendering TrueType fonts.
+    col = pow(col, vec3(1.0));
 
-:doc:`ref/freetype`
-  Enhanced pygame module for loading and rendering font faces.
+    float alpha = clamp(
+        max(col.r, max(col.g, col.b)),
+        0.0,
+        1.0
+    );
 
-:doc:`ref/gfxdraw`
-  Anti-aliasing draw functions.
+    gl_FragColor = vec4(col, alpha);
+}
+"""
 
-:doc:`ref/image`
-  Loading, saving, and transferring of surfaces.
 
-:doc:`ref/joystick`
-  Manage the joystick devices.
+def create_shader_program():
+    vertex_shader = compileShader(
+        VERTEX_SHADER,
+        GL_VERTEX_SHADER
+    )
 
-:doc:`ref/key`
-  Manage the keyboard device.
+    fragment_shader = compileShader(
+        FRAGMENT_SHADER,
+        GL_FRAGMENT_SHADER
+    )
 
-:doc:`ref/locals`
-  Pygame constants.
+    return compileProgram(
+        vertex_shader,
+        fragment_shader
+    )
+
+
+def main():
+    pygame.init()
+
+    # Window: 1000x600
+    pygame.display.set_mode(
+        (1000, 600),
+        pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE
+    )
 
-:doc:`ref/mixer`
-  Load and play sounds
+    pygame.display.set_caption("Python Lightning")
 
-:doc:`ref/mouse`
-  Manage the mouse device and display.
+    # Transparantie zoals in de WebGL-versie
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-:doc:`ref/music`
-  Play streaming music tracks.
+    program = create_shader_program()
+    glUseProgram(program)
 
-:doc:`ref/pygame`
-  Top level functions to manage pygame.
+    # Full-screen quad
+    vertices = [
+        -1.0, -1.0,
+         1.0, -1.0,
+        -1.0,  1.0,
 
-:doc:`ref/pixelarray`
-  Manipulate image pixel data.
+        -1.0,  1.0,
+         1.0, -1.0,
+         1.0,  1.0,
+    ]
 
-:doc:`ref/rect`
-  Flexible container for a rectangle.
+    vertex_buffer = glGenBuffers(1)
 
-:doc:`ref/scrap`
-  Native clipboard access.
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
 
-:doc:`ref/sndarray`
-  Manipulate sound sample data.
+    import ctypes
+
+    vertex_data = (ctypes.c_float * len(vertices))(*vertices)
 
-:doc:`ref/sprite`
-  Higher level objects to represent game images.
-
-:doc:`ref/surface`
-  Objects for images and the screen.
-
-:doc:`ref/surfarray`
-  Manipulate image pixel data.
-
-:doc:`ref/tests`
-  Test pygame.
-
-:doc:`ref/time`
-  Manage timing and framerate.
-
-:doc:`ref/transform`
-  Resize and move images.
-
-:doc:`pygame C API <c_api>`
-  The C api shared amongst pygame extension modules.
-
-:ref:`search`
-  Search pygame documents by keyword.
-
-.. _Readme: ../wiki/about
-
-.. _Install: ../wiki/GettingStarted#Pygame%20Installation
-
-.. _LGPL License: LGPL.txt
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        len(vertices) * 4,
+        vertex_data,
+        GL_STATIC_DRAW
+    )
+
+    position = glGetAttribLocation(
+        program,
+        "aPosition"
+    )
+
+    glEnableVertexAttribArray(position)
+
+    glVertexAttribPointer(
+        position,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        0,
+        None
+    )
+
+    # Uniform locations
+    resolution_location = glGetUniformLocation(
+        program,
+        "iResolution"
+    )
+
+    time_location = glGetUniformLocation(
+        program,
+        "iTime"
+    )
+
+    hue_location = glGetUniformLocation(
+        program,
+        "uHue"
+    )
+
+    x_offset_location = glGetUniformLocation(
+        program,
+        "uXOffset"
+    )
+
+    speed_location = glGetUniformLocation(
+        program,
+        "uSpeed"
+    )
+
+    intensity_location = glGetUniformLocation(
+        program,
+        "uIntensity"
+    )
+
+    size_location = glGetUniformLocation(
+        program,
+        "uSize"
+    )
+
+    # Zelfde waarden als jouw React-component
+    hue = 260.0
+    x_offset = 0.0
+    speed = 1.0
+    intensity = 1.0
+    size = 1.0
+
+    start_time = time.perf_counter()
+
+    clock = pygame.time.Clock()
+
+    running = True
+
+    while running:
+        for event in pygame.event.get():
+
+            if event.type == pygame.QUIT:
+                running = False
+
+            elif event.type == pygame.VIDEORESIZE:
+                width = max(event.w, 1)
+                height = max(event.h, 1)
+
+                pygame.display.set_mode(
+                    (width, height),
+                    pygame.OPENGL |
+                    pygame.DOUBLEBUF |
+                    pygame.RESIZABLE
+                )
+
+        width, height = pygame.display.get_surface().get_size()
+
+        glViewport(
+            0,
+            0,
+            width,
+            height
+        )
+
+        # Clear screen
+        glClearColor(
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        )
+
+        glClear(GL_COLOR_BUFFER_BIT)
+
+        current_time = (
+            time.perf_counter() - start_time
+        )
+
+        # Shader uniforms
+        glUniform2f(
+            resolution_location,
+            width,
+            height
+        )
+
+        glUniform1f(
+            time_location,
+            current_time
+        )
+
+        glUniform1f(
+            hue_location,
+            hue
+        )
+
+        glUniform1f(
+            x_offset_location,
+            x_offset
+        )
+
+        glUniform1f(
+            speed_location,
+            speed
+        )
+
+        glUniform1f(
+            intensity_location,
+            intensity
+        )
+
+        glUniform1f(
+            size_location,
+            size
+        )
+
+        # Render
+        glDrawArrays(
+            GL_TRIANGLES,
+            0,
+            6
+        )
+
+        pygame.display.flip()
+
+        # ~60 FPS
+        clock.tick(60)
+
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
